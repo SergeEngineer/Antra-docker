@@ -7,44 +7,14 @@
 </p>
 
 <p align="center">
-  <strong>A desktop music library builder that turns Spotify, YouTube Music, Apple Music, Amazon Music, Tidal, Qobuz, and Deezer links into a fully tagged local library in FLAC, ALAC, AAC, or MP3.</strong>
-</p>
-
-<p align="center">
-  <a href="https://github.com/anandprtp/Antra/releases"><img src="https://img.shields.io/github/v/release/anandprtp/Antra?color=0ea5e9&label=latest&style=flat-square&labelColor=0d1117"/></a>
-  <img src="https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux-supported-0ea5e9?style=flat-square&labelColor=0d1117"/>
-  <a href="https://t.me/antraaverse"><img src="https://img.shields.io/badge/Community-Telegram-26A5E4?style=flat-square&labelColor=0d1117&logo=telegram&logoColor=white"/></a>
-  <a href="https://discord.com/invite/UcY5cqMuE"><img src="https://img.shields.io/badge/Community-Discord-5865F2?style=flat-square&labelColor=0d1117&logo=discord&logoColor=white"/></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/anandprtp/Antra/releases">
-    <img src="https://img.shields.io/badge/⬇_Download_Latest_Release-0ea5e9?style=for-the-badge&labelColor=0d1117"/>
-  </a>
-  &nbsp;
-  <a href="FEATURES.md">
-    <img src="https://img.shields.io/badge/✦_Feature_Guide-7DD3FC?style=for-the-badge&labelColor=0d1117"/>
-  </a>
-</p>
-
-<br/>
-
-<p align="center">
-  <img src="assets/screenshots/ss_1_v117.png" width="780"/>
-</p>
-<p align="center">
-  <img src="assets/screenshots/ss_2_v117.png" width="780"/>
+  <strong>A docker version of music library builder that turns Spotify, YouTube Music, Apple Music, Amazon Music, Tidal, Qobuz, and Deezer links into a fully tagged local library in FLAC, ALAC, AAC, or MP3.</strong>
 </p>
 
 ---
 
 ## What it is
 
-Antra is a desktop music library manager. It helps you bring tracks into a tidy local library — automatically tagged with full metadata (title, artist, album, artwork, genre, and lyrics) and filed into a clean `Artist / Album` folder structure that works out of the box with media servers like Navidrome, Jellyfin, and Plex.
-
-Built-in themes let you set the look and feel from Settings.
-
-No Python. No setup. One binary.
+Antra is a docker version of music library manager. It helps you bring tracks into a tidy local library — automatically tagged with full metadata (title, artist, album, artwork, genre, and lyrics) and filed into a clean `Artist / Album` folder structure that works out of the box with media servers like Navidrome, Jellyfin, and Plex.
 
 ```
 Formats:  FLAC · ALAC · AAC · MP3
@@ -57,16 +27,44 @@ Output:   Auto-tagged · artwork + lyrics · media-server ready
 
 ## Install
 
-Download the build for your platform from [Releases](https://github.com/anandprtp/Antra/releases) and run it. No installation required.
+Clone the repository on your Unraid machine or your docker server
+```
+git clone https://github.com/SergeEngineer/Antra-docker
+cd Antra-docker
+```
 
-| Platform | File |
-|---|---|
-| Windows 10+ | `Antra.exe` |
-| macOS 12+ (Apple Silicon) | `Antra-macOS.dmg` |
-| macOS 12+ (Intel) | `Antra-macOS-Intel.dmg` |
-| Linux | `Antra-Linux.AppImage` |
+Build the image from the root `Antra-docker` folder and specifying docker file as `-f docker/Dockerfile `
+```
+# short version of the build command
+docker -f docker/Dockerfile -t antra:latest .
 
-> **Windows Defender flag?** False positive — packaged app bundles sometimes trip AV heuristics. The full source is in this repository and is auditable.
+# 
+docker build --no-cache --progress=plain -f docker/Dockerfile -t antra:latest .
+
+```
+
+``` 
+# docker app structure
+/app/
+├── antra/
+│   ├── __init__.py
+│   ├── json_cli.py
+│   └── ...
+├── antra_shared/
+├── antra-wails/
+├── requirements-runtime.txt
+└── web/
+    └── main.py
+```
+
+Check if your image is there
+```
+docker images antra
+```
+Run it
+```
+docker run --rm -p 7337:7337 -v /mnt/user/appdata/antra:/config -v /mnt/user/media/music:/music antra:latest
+```
 
 ---
 
@@ -78,31 +76,6 @@ Download the build for your platform from [Releases](https://github.com/anandprt
 4. Press **Add to Library**
 
 Everything is fetched, tagged, and filed into the right folder automatically.
-
----
-
-## Keep Antra alive
-
-Antra takes real time to maintain and improve. If it's useful to you, consider becoming a patron:
-
-<p align="center">
-  <a href="https://www.patreon.com/AntraVerse">
-    <img src="https://img.shields.io/badge/Support_on_Patreon-F96854?style=for-the-badge&logo=patreon&logoColor=white" alt="Support Antra on Patreon"/>
-  </a>
-</p>
-
----
-
-> [!TIP]
-> Star the repo to get notified about new releases directly from GitHub.
-
----
-
-## Contributing
-
-Thank you for your interest in contributing to Antra. At this time I am not actively looking for contributions, and pull requests may not be merged into the main codebase. I appreciate the thought and effort behind them regardless.
-
-If you have found a bug or have a feature idea, feel free to open an issue and I will take a look when I can.
 
 ---
 
