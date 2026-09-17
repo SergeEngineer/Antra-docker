@@ -35,12 +35,9 @@ cd Antra-docker
 
 Build the image from the root `Antra-docker` folder and specifying docker file as `-f docker/Dockerfile `
 ```
-# short version of the build command
-docker -f docker/Dockerfile -t antra:latest .
+docker build -f docker/Dockerfile -t antra:latest .
 
-# 
 docker build --no-cache --progress=plain -f docker/Dockerfile -t antra:latest .
-
 ```
 
 ``` 
