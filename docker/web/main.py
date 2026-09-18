@@ -403,99 +403,176 @@ async def index():
                 background-color: #ffd43b;
             }
             .header {
-                text-align: center;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 20px;
+                text-align: left;
             }
 
             .header h2 {
                 margin-bottom: 5px;
             }
 
+            .logo {
+                width: 96px;
+                height: 96px;
+                flex-shrink: 0;
+            }
+
+            .header .subtitle {
+                margin-bottom: 0;
+                font-size: 34px;
+                font-weight: 700;
+                color: #eee;
+                text-align: left;
+            }
+
             .subtitle {
                 text-align: center;
+            }
+
+            .tabs {
+                display: flex;
+                gap: 6px;
+                margin-bottom: 20px;
+                border-bottom: 1px solid #333;
+            }
+            .tab-button {
+                background: none;
+                border: none;
+                border-radius: 8px 8px 0 0;
+                padding: 12px 22px;
+                font-size: 15px;
+                font-weight: 600;
+                color: #999;
+                cursor: pointer;
+            }
+            .tab-button:hover {
+                background: #1c1c1c;
+                color: #eee;
+            }
+            .tab-button.active {
+                background: #1c1c1c;
+                color: #f5c518;
+            }
+            .tab-panel {
+                display: none;
+            }
+            .tab-panel.active {
+                display: block;
             }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h2>🎵 Antra</h2>
+                <img
+                    src="https://raw.githubusercontent.com/SergeEngineer/Antra-docker/refs/heads/main/assets/antra-128.png"
+                    alt="Antra"
+                    class="logo"
+                >
                 <div class="subtitle">Music Library Builder</div>
             </div>
 
-            <div class="card">
-                <div class="box">
-                    <h2>Add Music</h2>
+            <div class="tabs">
+                <button class="tab-button active" id="tabBtnAdd" onclick="switchTab('add')">Add Music</button>
+                <button class="tab-button" id="tabBtnSettings" onclick="switchTab('settings')">Settings</button>
+            </div>
 
-                    <label>
-                        URL: YouTube, YouTube Music, Spotify, Apple Music, SoundCloud, Amazon Music, Tidal, Qobuz
-                    </label>
-                    <input 
-                        id="url" 
-                        type="text" 
-                        placeholder="Paste music URL here... One per line or comma-separated." 
-                        oninput="updateExample()"
-                    >
-                </div>
-                <br>
-                <div class="box">
-                    <h2>Download Settings</h2>
+            <div id="tabAdd" class="tab-panel active">
+                <div class="card">
+                    <div class="box">
+                        <h2>Add Music</h2>
 
-                    <label for="outputFormat">Output format</label>
-                    <div class="format-row">
-                        <select id="outputFormat">
-                            <option value="flac">FLAC</option>
-                            <option value="alac">ALAC</option>
-                            <option value="aac">AAC</option>
-                            <option value="mp3">MP3</option>
-                        </select>
-                        <span class="format-note" id="formatNote">Lossless FLAC</span>
+                        <label>
+                            URL: YouTube, YouTube Music, Spotify, Apple Music, SoundCloud, Amazon Music, Tidal, Qobuz
+                        </label>
+                        <input 
+                            id="url" 
+                            type="text" 
+                            placeholder="Paste music URL here... One per line or comma-separated." 
+                            oninput="updateExample()"
+                        >
                     </div>
 
-                    <label for="singleTrack">Single track filename</label>
-                    <input id="singleTrack" type="text"
-                           value="{artist} - {title}" oninput="updateExample()">
-                        <div class="hint">Edit a tag to your preferred filename.</div>
+                    <br>
+                    <button id="addButton" onclick="addUrl()">Add to Library</button>
 
-                    <label for="albumTrack">Album track filename</label>
-                    <input id="albumTrack" type="text"
-                           value="{track} - {title}" oninput="updateExample()">
-                    <div class="hint">Used for tracks inside an album folder.</div>
-
-                    <label for="folderStructure">Folder structure</label>
-                    <input id="folderStructure" type="text"
-                           value="{album_artist}/{year} - {album}"
-                           oninput="updateExample()">
-                    <div class="hint">Use "/" between tags to create nested folders.</div>
-                    
-                    <label for="outputFormat">Tags:</label>
-                    <div class="tag-buttons" data-target="folderStructure"></div>
-
+                    <div id="progress" class="progress" style="display:none">
+                        <div id="status"></div>
+                        <div id="track"></div>
+                    </div>
                 </div>
 
-                <br>
-                <button id="addButton" onclick="addUrl()">Add to Library</button>
-
-                <div id="progress" class="progress" style="display:none">
-                    <div id="status"></div>
-                    <div id="track"></div>
+                <div class="card">
+                    <h2>Download Log</h2>
+                    <pre id="logs">Waiting for download...</pre>
                 </div>
             </div>
 
-            <div class="card">
-                <h2>Configuration</h2>
-                <p>Music directory: <strong>/music</strong></p>
-                <p>Configuration: <strong>/config</strong></p>
-                <p class="status">● Antra Web API is running</p>
-            </div>
+            <div id="tabSettings" class="tab-panel">
+                <div class="card">
+                    <div class="box">
+                        <h2>Download Settings</h2>
 
-            <div class="card">
-                <h2>Download Log</h2>
-                <pre id="logs">Waiting for download...</pre>
+                        <label for="outputFormat">Output format</label>
+                        <div class="format-row">
+                            <select id="outputFormat">
+                                <option value="flac">FLAC</option>
+                                <option value="alac">ALAC</option>
+                                <option value="aac">AAC</option>
+                                <option value="mp3">MP3</option>
+                            </select>
+                            <span class="format-note" id="formatNote">Lossless FLAC</span>
+                        </div>
+
+                        <label for="singleTrack">Single track filename</label>
+                        <input id="singleTrack" type="text"
+                               value="{artist} - {title}" oninput="updateExample()">
+                            <div class="hint">Edit a tag to your preferred filename.</div>
+
+                        <label for="albumTrack">Album track filename</label>
+                        <input id="albumTrack" type="text"
+                               value="{track} - {title}" oninput="updateExample()">
+                        <div class="hint">Used for tracks inside an album folder.</div>
+
+                        <label for="folderStructure">Folder structure</label>
+                        <input id="folderStructure" type="text"
+                               value="{album_artist}/{year} - {album}"
+                               oninput="updateExample()">
+                        <div class="hint">Use "/" between tags to create nested folders.</div>
+
+                        <label for="outputFormat">Tags:</label>
+                        <div class="hint">Click a tag to insert it into whichever field you clicked/edited last.</div>
+                        <div class="tag-buttons"></div>
+
+                        <label>Example output path</label>
+                        <div class="example" id="examplePath"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Configuration</h2>
+                    <p>Music directory: <strong>/music</strong></p>
+                    <p>Configuration: <strong>/config</strong></p>
+                    <p class="status">● Antra Web API is running</p>
+                </div>
             </div>
         </div>
 
         <script>
             let currentJob = null;
+
+            function switchTab(tab) {
+                const isAdd = tab === "add";
+
+                document.getElementById("tabAdd").classList.toggle("active", isAdd);
+                document.getElementById("tabSettings").classList.toggle("active", !isAdd);
+
+                document.getElementById("tabBtnAdd").classList.toggle("active", isAdd);
+                document.getElementById("tabBtnSettings").classList.toggle("active", !isAdd);
+            }
 
             const TAGS = [
                 ["{title}", "Title"],
@@ -513,17 +590,27 @@ async def index():
                 ["{quality}", "Quality"]
             ];
 
+            const TAG_TARGET_FIELDS = ["singleTrack", "albumTrack", "folderStructure"];
+            let lastFocusedField = "folderStructure";
+
+            function trackFocusedField() {
+                TAG_TARGET_FIELDS.forEach(id => {
+                    const input = document.getElementById(id);
+                    input.addEventListener("focus", () => {
+                        lastFocusedField = id;
+                    });
+                });
+            }
+
             function createTagButtons() {
                 document.querySelectorAll(".tag-buttons").forEach(container => {
-                    const targetId = container.dataset.target;
-
                     TAGS.forEach(([tag, label]) => {
                         const button = document.createElement("button");
                         button.type = "button";
                         button.className = "tag-button";
                         button.textContent = tag;
                         button.title = label;
-                        button.onclick = () => insertTag(targetId, tag);
+                        button.onclick = () => insertTag(lastFocusedField, tag);
                         container.appendChild(button);
                     });
                 });
@@ -762,6 +849,7 @@ async def index():
                 input.addEventListener("change", saveSettings);
             });
 
+            trackFocusedField();
             createTagButtons();
             loadSettings();
             updateFormatNote();
