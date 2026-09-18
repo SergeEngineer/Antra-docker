@@ -14,7 +14,7 @@ import re
 app = FastAPI(
     title="Antra",
     description="Antra Web API",
-    version="1.0.0",
+    version="1.0.1",
 )
 
 
@@ -25,6 +25,69 @@ MUSIC_DIR = Path(
 CONFIG_DIR = Path(
     os.getenv("ANTRA_CONFIG_DIR", "/config")
 )
+
+# ---------------------------------------------------------------------------
+# Persisted web UI settings
+# ---------------------------------------------------------------------------
+#
+# These are the download settings chosen in the Settings tab (output format,
+# filename templates, folder structure). They're stored as JSON inside
+# CONFIG_DIR so they survive container restarts/recreations as long as
+# /config is mounted to a persistent volume, regardless of which browser or
+# device is used to reach the web UI.
+
+SETTINGS_FILE = CONFIG_DIR / "web_settings.json"
+
+DEFAULT_SETTINGS = {
+    "output_format": "flac",
+    "single_track_filename": "{artist} - {title}",
+    "album_track_filename": "{track} - {title}",
+    "folder_structure": "{album_artist}/{year} - {album}",
+}
+
+ALLOWED_FORMATS = {"auto", "flac", "alac", "aac", "mp3", "atmos"}
+
+
+class SettingsRequest(BaseModel):
+    output_format: str = DEFAULT_SETTINGS["output_format"]
+    single_track_filename: str = DEFAULT_SETTINGS["single_track_filename"]
+    album_track_filename: str = DEFAULT_SETTINGS["album_track_filename"]
+    folder_structure: str = DEFAULT_SETTINGS["folder_structure"]
+
+
+def load_settings() -> dict:
+    """Read persisted settings from CONFIG_DIR, falling back to defaults."""
+
+    settings = DEFAULT_SETTINGS.copy()
+
+    if not SETTINGS_FILE.exists():
+        return settings
+
+    try:
+
+        with open(SETTINGS_FILE, "r") as f:
+            saved = json.load(f)
+
+        for key in DEFAULT_SETTINGS:
+
+            if key in saved and isinstance(saved[key], str) and saved[key].strip():
+                settings[key] = saved[key]
+
+    except (json.JSONDecodeError, OSError):
+        # Corrupt or unreadable settings file: fall back to defaults
+        # rather than failing the whole app.
+        pass
+
+    return settings
+
+
+def save_settings(settings: dict) -> None:
+    """Persist settings to CONFIG_DIR so they survive container restarts."""
+
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(settings, f, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -339,16 +402,35 @@ async def index():
                 margin-top: -4px;
                 margin-bottom: 12px;
             }
-            .format-row {
+            .format-buttons {
                 display: flex;
-                align-items: center;
-                gap: 12px;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-bottom: 8px;
             }
-            .format-row select {
-                max-width: 220px;
-                margin-bottom: 0;
+            .format-button {
+                padding: 10px 18px;
+                font-size: 14px;
+                font-weight: 600;
+                background: #111;
+                border: 1px solid #444;
+                border-radius: 8px;
+                color: #ccc;
             }
-            .format-note { color: #999; font-size: 13px; }
+            .format-button:hover {
+                background: #2a2a2a;
+                border-color: #666;
+            }
+            .format-button.active {
+                background: #f5c518;
+                border-color: #f5c518;
+                color: #000;
+            }
+            .format-note {
+                color: #999;
+                font-size: 13px;
+                margin-bottom: 12px;
+            }
             .status { color: #7ddf7d; }
             .error { color: #ff7777; }
             .progress {
@@ -517,15 +599,8 @@ async def index():
                         <h2>Download Settings</h2>
 
                         <label for="outputFormat">Output format</label>
-                        <div class="format-row">
-                            <select id="outputFormat">
-                                <option value="flac">FLAC</option>
-                                <option value="alac">ALAC</option>
-                                <option value="aac">AAC</option>
-                                <option value="mp3">MP3</option>
-                            </select>
-                            <span class="format-note" id="formatNote">Lossless FLAC</span>
-                        </div>
+                        <div class="format-buttons" id="outputFormat"></div>
+                        <div class="format-note" id="formatNote">Lossless FLAC</div>
 
                         <label for="singleTrack">Single track filename</label>
                         <input id="singleTrack" type="text"
@@ -633,16 +708,65 @@ async def index():
                 updateExample();
             }
 
+            const FORMATS = [
+                ["auto", "AUTO"],
+                ["flac", "FLAC"],
+                ["alac", "ALAC"],
+                ["aac", "AAC"],
+                ["mp3", "MP3"],
+                ["atmos", "ATMOS"]
+            ];
+
+            let selectedFormat = "flac";
+
+            function createFormatButtons() {
+                const container = document.getElementById("outputFormat");
+                container.innerHTML = "";
+
+                FORMATS.forEach(([value, label]) => {
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "format-button";
+                    button.textContent = label;
+                    button.dataset.value = value;
+                    button.classList.toggle("active", value === selectedFormat);
+                    button.onclick = () => setSelectedFormat(value);
+                    container.appendChild(button);
+                });
+            }
+
+            function setSelectedFormat(format) {
+                selectedFormat = format;
+
+                document
+                    .querySelectorAll("#outputFormat .format-button")
+                    .forEach(button => {
+                        button.classList.toggle(
+                            "active",
+                            button.dataset.value === format
+                        );
+                    });
+
+                updateFormatNote();
+                saveSettings();
+            }
+
             function updateFormatNote() {
-                const format = document.getElementById("outputFormat").value;
+                const format = selectedFormat;
                 const note = document.getElementById("formatNote");
 
-                if (format === "flac") {
+                if (format === "auto") {
+                    note.innerText =
+                        "Automatically picks the best available quality";
+                } else if (format === "flac") {
                     note.innerText = "Lossless FLAC";
                 } else if (format === "alac") {
                     note.innerText = "Lossless ALAC";
                 } else if (format === "aac") {
                     note.innerText = "Lossy AAC";
+                } else if (format === "atmos") {
+                    note.innerText =
+                        "Dolby Atmos spatial audio, when available";
                 } else {
                     note.innerText =
                         "MP3 — prefers 360 kbps when available, then lower quality";
@@ -652,7 +776,7 @@ async def index():
             }
 
             function updateExample() {
-                const format = document.getElementById("outputFormat").value;
+                const format = selectedFormat;
                 const folder =
                     document.getElementById("folderStructure").value ||
                     "{album_artist}/{year} - {album}";
@@ -673,9 +797,11 @@ async def index():
                     isrc: "USQX91300105",
                     codec: format === "flac" ? "FLAC" :
                            format === "alac" ? "ALAC" :
-                           format === "aac" ? "AAC" : "MP3",
+                           format === "aac" ? "AAC" :
+                           format === "atmos" ? "ATMOS" :
+                           format === "auto" ? "AUTO" : "MP3",
                     bitrate: format === "mp3" ? "360" : "—",
-                    quality: format === "flac" || format === "alac"
+                    quality: format === "flac" || format === "alac" || format === "atmos"
                         ? "Lossless"
                         : "High Quality"
                 };
@@ -697,44 +823,101 @@ async def index():
                     renderedFolder + "/" + renderedTrack + "." + format;
             }
 
-            function saveSettings() {
-                localStorage.setItem("antraSettings", JSON.stringify({
-                    outputFormat:
-                        document.getElementById("outputFormat").value,
-                    singleTrack:
+            function currentSettingsPayload() {
+                return {
+                    output_format: selectedFormat,
+                    single_track_filename:
                         document.getElementById("singleTrack").value,
-                    albumTrack:
+                    album_track_filename:
                         document.getElementById("albumTrack").value,
-                    folderStructure:
+                    folder_structure:
                         document.getElementById("folderStructure").value
-                }));
+                };
             }
 
-            function loadSettings() {
+            async function saveSettings() {
+                const settings = currentSettingsPayload();
+
+                // Keep a local cache too, so the form has something to
+                // restore from instantly even if the request below is
+                // still in flight or the server is briefly unreachable.
                 try {
-                    const saved =
-                        JSON.parse(localStorage.getItem("antraSettings"));
+                    localStorage.setItem(
+                        "antraSettings",
+                        JSON.stringify(settings)
+                    );
+                } catch (error) {
+                    console.error("Could not cache settings locally", error);
+                }
 
-                    if (!saved) return;
+                try {
+                    const response = await fetch("/api/settings", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify(settings)
+                    });
 
-                    if (saved.outputFormat)
-                        document.getElementById("outputFormat").value =
-                            saved.outputFormat;
+                    const data = await response.json();
 
-                    if (saved.singleTrack)
-                        document.getElementById("singleTrack").value =
-                            saved.singleTrack;
-
-                    if (saved.albumTrack)
-                        document.getElementById("albumTrack").value =
-                            saved.albumTrack;
-
-                    if (saved.folderStructure)
-                        document.getElementById("folderStructure").value =
-                            saved.folderStructure;
+                    if (!data.success) {
+                        console.error(
+                            "Could not save settings to /config:",
+                            data.message
+                        );
+                    }
 
                 } catch (error) {
-                    console.error("Could not load saved settings", error);
+                    console.error(
+                        "Could not reach server to save settings", error
+                    );
+                }
+            }
+
+            function applySettings(settings) {
+                if (!settings) return;
+
+                if (settings.output_format)
+                    setSelectedFormat(settings.output_format);
+
+                if (settings.single_track_filename)
+                    document.getElementById("singleTrack").value =
+                        settings.single_track_filename;
+
+                if (settings.album_track_filename)
+                    document.getElementById("albumTrack").value =
+                        settings.album_track_filename;
+
+                if (settings.folder_structure)
+                    document.getElementById("folderStructure").value =
+                        settings.folder_structure;
+            }
+
+            async function loadSettings() {
+                // Settings persisted in /config (survives container
+                // restarts, shared across any browser/device) are the
+                // source of truth.
+                try {
+                    const response = await fetch("/api/settings");
+
+                    if (response.ok) {
+                        applySettings(await response.json());
+                        return;
+                    }
+
+                } catch (error) {
+                    console.error(
+                        "Could not load settings from server", error
+                    );
+                }
+
+                // Fall back to whatever this browser last cached locally
+                // if the server couldn't be reached.
+                try {
+                    const cached =
+                        JSON.parse(localStorage.getItem("antraSettings"));
+                    applySettings(cached);
+                } catch (error) {
+                    console.error("Could not load cached settings", error);
                 }
             }
 
@@ -752,16 +935,7 @@ async def index():
                     return;
                 }
 
-                const settings = {
-                    output_format:
-                        document.getElementById("outputFormat").value,
-                    single_track_filename:
-                        document.getElementById("singleTrack").value,
-                    album_track_filename:
-                        document.getElementById("albumTrack").value,
-                    folder_structure:
-                        document.getElementById("folderStructure").value
-                };
+                const settings = currentSettingsPayload();
 
                 saveSettings();
 
@@ -837,23 +1011,20 @@ async def index():
                 }
             }
 
-            document.getElementById("outputFormat")
-                .addEventListener("change", () => {
-                    updateFormatNote();
-                    saveSettings();
-                });
-
             document.querySelectorAll(
                 "#singleTrack, #albumTrack, #folderStructure"
             ).forEach(input => {
                 input.addEventListener("change", saveSettings);
             });
 
-            trackFocusedField();
-            createTagButtons();
-            loadSettings();
-            updateFormatNote();
-            updateExample();
+            (async function init() {
+                trackFocusedField();
+                createFormatButtons();
+                createTagButtons();
+                await loadSettings();
+                updateFormatNote();
+                updateExample();
+            })();
         </script>
     </body>
     </html>
@@ -874,6 +1045,43 @@ async def health():
     }
 
 
+@app.get("/api/settings")
+async def get_settings():
+    return load_settings()
+
+
+@app.post("/api/settings")
+async def update_settings(data: SettingsRequest):
+
+    output_format = data.output_format.strip().lower()
+
+    if output_format not in ALLOWED_FORMATS:
+        return {
+            "success": False,
+            "message": "Invalid output format. Choose Auto, FLAC, ALAC, AAC, MP3 or Atmos."
+        }
+
+    settings = {
+        "output_format": output_format,
+        "single_track_filename": data.single_track_filename.strip()
+            or DEFAULT_SETTINGS["single_track_filename"],
+        "album_track_filename": data.album_track_filename.strip()
+            or DEFAULT_SETTINGS["album_track_filename"],
+        "folder_structure": data.folder_structure.strip()
+            or DEFAULT_SETTINGS["folder_structure"],
+    }
+
+    try:
+        save_settings(settings)
+    except OSError as exc:
+        return {
+            "success": False,
+            "message": f"Could not save settings to {CONFIG_DIR}: {exc}"
+        }
+
+    return {"success": True, "settings": settings}
+
+
 @app.post("/api/add")
 async def add_music(data: AddRequest):
     url = data.url.strip()
@@ -881,24 +1089,33 @@ async def add_music(data: AddRequest):
     if not url:
         return {"success": False, "message": "URL is required."}
 
-    allowed_formats = {"flac", "alac", "aac", "mp3"}
     output_format = data.output_format.strip().lower()
 
-    if output_format not in allowed_formats:
+    if output_format not in ALLOWED_FORMATS:
         return {
             "success": False,
-            "message": "Invalid output format. Choose FLAC, ALAC, AAC or MP3."
+            "message": "Invalid output format. Choose Auto, FLAC, ALAC, AAC, MP3 or Atmos."
         }
 
     settings = {
         "output_format": output_format,
         "single_track_filename": data.single_track_filename.strip()
-            or "{artist} - {title}",
+            or DEFAULT_SETTINGS["single_track_filename"],
         "album_track_filename": data.album_track_filename.strip()
-            or "{track} - {title}",
+            or DEFAULT_SETTINGS["album_track_filename"],
         "folder_structure": data.folder_structure.strip()
-            or "{album_artist}/{year} - {album}",
+            or DEFAULT_SETTINGS["folder_structure"],
     }
+
+    # Persist these as the new defaults for next time, so the container
+    # remembers the settings used for this download even if the browser
+    # never explicitly hit /api/settings.
+    try:
+        save_settings(settings)
+    except OSError:
+        # Non-fatal: the download can still proceed even if we couldn't
+        # write to CONFIG_DIR for some reason (e.g. read-only mount).
+        pass
 
     job_id = str(uuid.uuid4())
 
