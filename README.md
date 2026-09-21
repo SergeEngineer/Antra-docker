@@ -33,11 +33,11 @@ git clone https://github.com/SergeEngineer/Antra-docker
 cd Antra-docker
 ```
 
-Build the image from the root `Antra-docker` folder and specifying docker file as `-f docker/Dockerfile `
+Build the image from the root `Antra-docker` folder and specifying docker file as `-f docker/antra-web/Dockerfile `
 ```
-docker build -f docker/Dockerfile -t antra:latest .
+docker build -f docker/antra-web/Dockerfile -t antra-web:latest .
 
-docker build --no-cache --progress=plain -f docker/Dockerfile -t antra:latest .
+docker build --no-cache --progress=plain -f docker/antra-web/Dockerfile -t antra-web:latest .
 ```
 
 ``` 
