@@ -876,24 +876,29 @@ async def index():
             .queue-item-top {
                 display: flex;
                 justify-content: space-between;
-                align-items: flex-start;
+                align-items: baseline;
                 gap: 12px;
                 flex-wrap: wrap;
             }
             .queue-item-url {
                 font-family: monospace;
                 font-size: 13px;
-                color: #ddd;
+                color: #999;
                 word-break: break-all;
+                text-align: right;
             }
             .queue-item-playlist {
                 font-size: 18px;
                 font-weight: 700;
                 color: #f5c518;
-                margin-bottom: 6px;
+            }
+            .queue-divider {
+                border: none;
+                border-top: 1px solid #333;
+                margin: 12px 0 0;
             }
             .queue-item-folder {
-                margin-top: 8px;
+                margin-top: 12px;
                 padding: 8px 10px;
                 background: #101010;
                 border-radius: 6px;
@@ -905,11 +910,6 @@ async def index():
             .queue-item-folder strong {
                 color: #ccc;
                 font-family: Arial, sans-serif;
-            }
-            .queue-item-added {
-                color: #888;
-                font-size: 12px;
-                white-space: nowrap;
             }
             .queue-badge {
                 display: inline-block;
@@ -927,19 +927,6 @@ async def index():
             .queue-badge-completed { background: #b9b27a; color: #161616; }
             .queue-badge-failed { background: #7d2e2e; color: #fff; }
             .queue-badge-stopped { background: #555; color: #fff; }
-            .queue-now-downloading {
-                margin-top: 10px;
-                padding: 8px 10px;
-                border-left: 4px solid #f5c518;
-                background: #25210f;
-                border-radius: 5px;
-                color: #f5c518;
-                font-size: 13px;
-                font-weight: 700;
-            }
-            .queue-current-track { color: #eee; font-weight: 600; margin-top: 8px; }
-            .queue-pending-note { color: #aaa; font-size: 13px; margin-top: 8px; }
-
             .queue-progress-bar {
                 margin-top: 12px;
                 height: 8px;
@@ -1504,44 +1491,32 @@ async def index():
 
                 const canStop = isDownloading || isPending;
                 const actionButton = canStop
-                    ? `<button class="btn-stop" onclick="stopQueueItem('${item.id}')">Stop</button>`
+                    ? `<button class="btn-stop" onclick="stopQueueItem('${item.id}')">${isPending ? "Cancel" : "Stop"}</button>`
                     : `<button onclick="startQueueItem('${item.id}')">Sync Now</button>`;
 
-                const currentTrack = progress.current_artist || progress.current_track
-                    ? `<div class="queue-current-track">${escapeHtml(progress.current_artist || "")} ${progress.current_artist && progress.current_track ? "—" : ""} ${escapeHtml(progress.current_track || "")}</div>`
-                    : "";
-
-                const activeUrl = isDownloading
-                    ? `<div class="queue-now-downloading">NOW DOWNLOADING: ${escapeHtml(item.url)}</div>`
-                    : "";
-                const pendingNote = isPending
-                    ? `<div class="queue-pending-note">Waiting in queue — another URL is currently downloading.</div>`
-                    : "";
-
-                let progressText = "";
+                let description = "";
                 if (isDownloading && total > 0) {
-                    progressText = `Track ${Math.min(index || 1, total)} of ${total}`;
+                    description = `Track ${Math.min(index || 1, total)} of ${total} — ${item.message || "Downloading..."}`;
+                } else if (isDownloading) {
+                    description = item.message || "Downloading...";
+                } else if (isPending) {
+                    description = "Waiting for the current download to finish";
                 } else if (item.status === "completed") {
-                    progressText = `${completed} downloaded · ${failed} failed · ${skipped} skipped`;
+                    description = `${completed} downloaded · ${failed} failed · ${skipped} skipped`;
+                } else {
+                    description = item.message || "";
                 }
 
                 return `
                     <div class="queue-item">
                         <div class="queue-item-top">
-                            <div>
-                                <div class="queue-item-playlist">
-                                    ${escapeHtml(item.playlist_name || "Playlist name: waiting for metadata...")}
-                                </div>
-                                <div class="queue-item-url">${escapeHtml(item.url)}</div>
-                                <div class="queue-item-folder">
-                                    <strong>Saved to:</strong>
-                                    ${escapeHtml(item.folder_path || "Waiting for playlist metadata...")}
-                                </div>
-                                ${activeUrl}
-                                ${pendingNote}
+                            <div class="queue-item-playlist">
+                                ${escapeHtml(item.playlist_name || "Waiting for playlist name...")}
                             </div>
-                            <div class="queue-item-added">Added ${fmtDate(item.added_at)}</div>
+                            <div class="queue-item-url">${escapeHtml(item.url)}</div>
                         </div>
+
+                        <hr class="queue-divider">
 
                         <div class="queue-progress-bar">
                             <div class="${fillClass}" style="${fillStyle}"></div>
@@ -1549,10 +1524,13 @@ async def index():
 
                         <div class="queue-item-message">
                             <span class="queue-badge queue-badge-${item.status}">${statusLabel(item.status)}</span>
-                            ${escapeHtml(item.message || "")}
-                            ${progressText ? ` — ${escapeHtml(progressText)}` : ""}
+                            ${escapeHtml(description)}
                         </div>
-                        ${currentTrack}
+
+                        <div class="queue-item-folder">
+                            <strong>Saved to:</strong>
+                            ${escapeHtml(item.folder_path || "Waiting for playlist metadata...")}
+                        </div>
 
                         <div class="queue-item-meta">
                             <div class="queue-item-meta-left">

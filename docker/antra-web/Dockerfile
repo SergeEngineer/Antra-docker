@@ -60,7 +60,7 @@ RUN python -m playwright install chromium
 COPY antra/ ./antra/
 COPY antra_shared/ ./antra_shared/
 COPY antra-wails/ ./antra-wails/
-COPY docker/web/ ./web/
+COPY docker/antra-web/web/ ./web/
 
 # Create persistent directories
 RUN mkdir -p /config /music /app/logs
