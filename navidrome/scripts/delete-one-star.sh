@@ -21,6 +21,9 @@ LOG_DIR="/mnt/user/appdata/navidrome/scripts/logs"
 # 5. Log file - one log per day
 LOG_FILE="$LOG_DIR/delete-one-star-rating-$(date '+%Y-%m-%d').log"
 
+# Remove duplicate files ending with (1).flac through (9).flac
+DELETE_FILES=true
+
 # ------------------------------------------------------------
 # Create log directory
 # ------------------------------------------------------------
@@ -183,6 +186,113 @@ log ""
 log "Script finished."
 log "============================================================"
 
+
+
+
+
+# ============================================================
+# DUPLICATE FILE CLEANUP
+# ============================================================
+
+log ""
+log "============================================================"
+log "DUPLICATE FILE CLEANUP"
+log "============================================================"
+
+DUPLICATE_COUNT=0
+DUPLICATE_DELETED=0
+DUPLICATE_SKIPPED=0
+
+log "Scanning entire music library for duplicate FLAC files..."
+log "Looking for files ending with (1).flac through (9).flac"
+
+while IFS= read -r DUPLICATE_FILE; do
+
+    [ -z "$DUPLICATE_FILE" ] && continue
+
+    DUPLICATE_COUNT=$((DUPLICATE_COUNT + 1))
+
+    log ""
+    log "Duplicate found:"
+    log "  $DUPLICATE_FILE"
+
+    # --------------------------------------------------------
+    # Safety check
+    # --------------------------------------------------------
+
+    REAL_ROOT=$(realpath -e "$HOST_MUSIC_DIR" 2>/dev/null)
+    REAL_FILE=$(realpath -e "$DUPLICATE_FILE" 2>/dev/null)
+
+    if [ -z "$REAL_ROOT" ] || [ -z "$REAL_FILE" ]; then
+        log "  ERROR: Could not resolve path."
+        DUPLICATE_SKIPPED=$((DUPLICATE_SKIPPED + 1))
+        continue
+    fi
+
+    case "$REAL_FILE" in
+
+        "$REAL_ROOT"/*)
+            ;;
+
+        *)
+            log "  SECURITY: File is outside music directory!"
+            log "  SKIPPED"
+
+            DUPLICATE_SKIPPED=$((DUPLICATE_SKIPPED + 1))
+            continue
+            ;;
+
+    esac
+
+    # --------------------------------------------------------
+    # Delete or dry run
+    # --------------------------------------------------------
+
+    if [ "$DELETE_FILES" = true ]; then
+
+        log "  DELETE: $REAL_FILE"
+
+        if rm -f -- "$REAL_FILE"; then
+
+            log "  SUCCESS: Duplicate deleted."
+            DUPLICATE_DELETED=$((DUPLICATE_DELETED + 1))
+
+        else
+
+            log "  ERROR: Failed to delete duplicate."
+            DUPLICATE_SKIPPED=$((DUPLICATE_SKIPPED + 1))
+
+        fi
+
+    else
+
+        log "  DRY RUN: Would delete $REAL_FILE"
+        DUPLICATE_DELETED=$((DUPLICATE_DELETED + 1))
+
+    fi
+
+done < <(
+    find "$HOST_MUSIC_DIR" \
+        -type f \
+        \( \
+            -iname '* (1).flac' \
+            -o -iname '* (2).flac' \
+            -o -iname '* (3).flac' \
+            -o -iname '* (4).flac' \
+            -o -iname '* (5).flac' \
+            -o -iname '* (6).flac' \
+            -o -iname '* (7).flac' \
+            -o -iname '* (8).flac' \
+            -o -iname '* (9).flac' \
+        \) \
+        -print
+)
+
+log ""
+log "Duplicate scan complete."
+log "Duplicate files found : $DUPLICATE_COUNT"
+log "Duplicates deleted     : $DUPLICATE_DELETED"
+log "Duplicates skipped     : $DUPLICATE_SKIPPED"
 
 # ============================================================
 # PURGE LOG FILES - OLDER THAN 90 DAYS
