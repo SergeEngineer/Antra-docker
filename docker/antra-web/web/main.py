@@ -10,8 +10,7 @@ import json
 import uuid
 import re
 import time
-
-# test 
+import urllib.request
 
 app = FastAPI(
     title="Antra",
@@ -644,7 +643,9 @@ def scheduler_loop():
                 if reference_dt.tzinfo is None:
                     reference_dt = reference_dt.replace(tzinfo=timezone.utc)
 
-                due_at = reference_dt + timedelta(seconds=SCHEDULE_SECONDS[schedule])
+                due_at = reference_dt + timedelta(
+                    seconds=SCHEDULE_SECONDS[schedule]
+                )
 
                 if now >= due_at:
                     print(
@@ -658,13 +659,28 @@ def scheduler_loop():
 
         time.sleep(60)
 
+def get_public_ip() -> str:
+    """Return the public IP address visible from the Antra container."""
 
+    try:
+        with urllib.request.urlopen(
+            "https://api.ipify.org",
+            timeout=5
+        ) as response:
+            return response.read().decode("utf-8").strip()
+
+    except Exception as exc:
+        print(f"[network] could not determine public IP: {exc}")
+        return "Unavailable"
+    
 # ---------------------------------------------------------------------------
 # Web interface
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+    public_ip = get_public_ip()
+
     return """
     <!DOCTYPE html>
     <html>
@@ -1090,6 +1106,7 @@ async def index():
                     <p>Music directory: <strong>/music</strong></p>
                     <p>Configuration: <strong>/config</strong></p>
                     <p class="status">● Antra Web API is running</p>
+                    <p>Public IP: <strong>{public_ip}</strong></p>
                 </div>
             </div>
         </div>
@@ -1691,7 +1708,7 @@ async def index():
         </script>
     </body>
     </html>
-    """
+    """.replace("{public_ip}", public_ip)
 
 class QueueAddRequest(BaseModel):
     url: str
