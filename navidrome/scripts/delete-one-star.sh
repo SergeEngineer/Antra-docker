@@ -6,22 +6,28 @@
 
 # --- CONFIGURATION ---
 
-# 1. Name of your Navidrome Docker container
+# 1. Name of your Navidrome docker container
 CONTAINER_NAME="navidrome"
 
 # 2. Path to the physical music folder ON YOUR HOST MACHINE
 HOST_MUSIC_DIR="/mnt/user/media/music"
 
-# 3. Temporary location on your host to save the exported playlist
-PLAYLIST_TMP="/tmp/to_delete.m3u"
+# 3. Playlists to process
+#    Separate multiple playlists with commas
+PLAYLISTS="Smart: To Delete,!DELETE"
 
-# 4. Log directory
+# 4. Temporary location on your host
+PLAYLIST_TMP="/tmp/to_delete"
+
+# 5. Log directory
 LOG_DIR="/mnt/user/appdata/navidrome/scripts/logs"
 
-# 5. Log file - one log per day
+# 6. Log file - one log per day
 LOG_FILE="$LOG_DIR/delete-one-star-rating-$(date '+%Y-%m-%d').log"
 
-# Remove duplicate files ending with (1).flac through (9).flac
+# 7. Delete files
+#    true  = actually delete
+#    false = dry run
 DELETE_FILES=true
 
 # ------------------------------------------------------------
@@ -45,9 +51,10 @@ log() {
 log "============================================================"
 log "Navidrome Smart Playlist Cleanup"
 log "============================================================"
-log "Playlist: Smart: To Delete"
+log "Playlists: $PLAYLISTS"
 log "Container: $CONTAINER_NAME"
 log "Host music directory: $HOST_MUSIC_DIR"
+log "Delete enabled: $DELETE_FILES"
 log "Log file: $LOG_FILE"
 log ""
 
@@ -67,46 +74,100 @@ if ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
 fi
 
 # ============================================================
-# Export playlist
+# Counters
 # ============================================================
 
-log "Exporting playlist 'Smart: To Delete' from Docker container..."
-
-if ! docker exec "$CONTAINER_NAME" \
-    navidrome pls -n -l error -p "Smart: To Delete" \
-    > "$PLAYLIST_TMP" 2>>"$LOG_FILE"; then
-
-    log "ERROR: Failed to export playlist."
-    rm -f "$PLAYLIST_TMP"
-    exit 1
-fi
+TOTAL_TRACKS=0
+TOTAL_DELETED=0
+TOTAL_MISSING=0
+TOTAL_ERRORS=0
+PLAYLISTS_PROCESSED=0
+PLAYLISTS_FAILED=0
 
 # ============================================================
-# Check playlist
+# Process each playlist
 # ============================================================
 
-if [ -s "$PLAYLIST_TMP" ]; then
+IFS=',' read -ra PLAYLIST_ARRAY <<< "$PLAYLISTS"
+
+for PLAYLIST_NAME in "${PLAYLIST_ARRAY[@]}"; do
+
+    # Remove leading/trailing spaces
+    PLAYLIST_NAME="$(echo "$PLAYLIST_NAME" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+    [ -z "$PLAYLIST_NAME" ] && continue
+
+    PLAYLISTS_PROCESSED=$((PLAYLISTS_PROCESSED + 1))
+
+    # --------------------------------------------------------
+    # Create a unique temporary file for this playlist
+    # --------------------------------------------------------
+
+    PLAYLIST_TMP_FILE="${PLAYLIST_TMP}-$(date '+%s%N').m3u"
+
+    log ""
+    log "============================================================"
+    log "PLAYLIST: $PLAYLIST_NAME"
+    log "============================================================"
+
+    # ========================================================
+    # Export playlist
+    # ========================================================
+
+    log "Exporting playlist '$PLAYLIST_NAME' from Docker container..."
+
+    if ! docker exec "$CONTAINER_NAME" \
+        navidrome pls -n -l error -p "$PLAYLIST_NAME" \
+        > "$PLAYLIST_TMP_FILE" 2>>"$LOG_FILE"; then
+
+        log "ERROR: Failed to export playlist '$PLAYLIST_NAME'."
+
+        rm -f "$PLAYLIST_TMP_FILE"
+
+        PLAYLISTS_FAILED=$((PLAYLISTS_FAILED + 1))
+
+        continue
+    fi
+
+    # ========================================================
+    # Check playlist
+    # ========================================================
+
+    if [ ! -s "$PLAYLIST_TMP_FILE" ]; then
+
+        log "Playlist '$PLAYLIST_NAME' was empty or not found."
+
+        rm -f "$PLAYLIST_TMP_FILE"
+
+        continue
+    fi
 
     log "Playlist exported successfully."
 
     # Count actual music entries
-    TRACK_COUNT=$(grep -v '^#' "$PLAYLIST_TMP" | grep -v '^[[:space:]]*$' | wc -l)
+    TRACK_COUNT=$(grep -v '^#' "$PLAYLIST_TMP_FILE" \
+        | grep -v '^[[:space:]]*$' \
+        | wc -l)
 
     log "Tracks found: $TRACK_COUNT"
+
+    TOTAL_TRACKS=$((TOTAL_TRACKS + TRACK_COUNT))
+
+    if [ "$TRACK_COUNT" -eq 0 ]; then
+        rm -f "$PLAYLIST_TMP_FILE"
+        continue
+    fi
+
     log ""
     log "Processing deletions..."
 
-    DELETED=0
-    MISSING=0
-    ERRORS=0
-
     # ========================================================
-    # Process playlist
+    # Process playlist tracks
     # ========================================================
 
     while IFS= read -r line || [[ -n "$line" ]]; do
 
-        # Clean Windows carriage returns if any
+        # Clean Windows carriage returns
         line=$(echo "$line" | tr -d '\r')
 
         # Skip empty lines
@@ -119,11 +180,13 @@ if [ -s "$PLAYLIST_TMP" ]; then
         # Build absolute path on host
         # ----------------------------------------------------
 
-        # Remove Navidrome's /music/ prefix before mapping to the host
-       # Remove the /music/ prefix returned by Navidrome
+        log ""
+        log "Playlist path: $line"
+
+        # Remove Navidrome's /music/ prefix
         RELATIVE_PATH="${line#/music/}"
 
-        # Build the actual host path
+        # Build actual host path
         FULL_PATH="$HOST_MUSIC_DIR/$RELATIVE_PATH"
 
         log "Host path:     $FULL_PATH"
@@ -134,60 +197,68 @@ if [ -s "$PLAYLIST_TMP" ]; then
 
         if [ -f "$FULL_PATH" ]; then
 
-            log "Deleting: $FULL_PATH"
+            if [ "$DELETE_FILES" = true ]; then
 
-            if rm -f -- "$FULL_PATH"; then
-                log "SUCCESS: File deleted."
-                DELETED=$((DELETED + 1))
+                log "Deleting: $FULL_PATH"
+
+                if rm -f -- "$FULL_PATH"; then
+
+                    log "SUCCESS: File deleted."
+
+                    TOTAL_DELETED=$((TOTAL_DELETED + 1))
+
+                else
+
+                    log "ERROR: Failed to delete file."
+
+                    TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+
+                fi
+
             else
-                log "ERROR: Failed to delete file."
-                ERRORS=$((ERRORS + 1))
+
+                log "DRY RUN: Would delete $FULL_PATH"
+
+                TOTAL_DELETED=$((TOTAL_DELETED + 1))
+
             fi
 
         else
 
             log "MISSING: File not found on host."
-            MISSING=$((MISSING + 1))
+
+            TOTAL_MISSING=$((TOTAL_MISSING + 1))
 
         fi
 
-    done < "$PLAYLIST_TMP"
+    done < "$PLAYLIST_TMP_FILE"
 
-    # ========================================================
-    # Clean up
-    # ========================================================
+    # --------------------------------------------------------
+    # Clean up playlist temporary file
+    # --------------------------------------------------------
 
-    rm -f "$PLAYLIST_TMP"
-
-    # ========================================================
-    # Summary
-    # ========================================================
+    rm -f "$PLAYLIST_TMP_FILE"
 
     log ""
-    log "============================================================"
-    log "SUMMARY"
-    log "============================================================"
-    log "Tracks found : $TRACK_COUNT"
-    log "Deleted      : $DELETED"
-    log "Missing      : $MISSING"
-    log "Errors       : $ERRORS"
-    log "============================================================"
-    log "Deletion complete."
+    log "Playlist '$PLAYLIST_NAME' processing complete."
 
-else
+done
 
-    log "Playlist 'Smart: To Delete' was empty or not found."
-
-    rm -f "$PLAYLIST_TMP"
-
-fi
+# ============================================================
+# PLAYLIST SUMMARY
+# ============================================================
 
 log ""
-log "Script finished."
 log "============================================================"
-
-
-
+log "PLAYLIST CLEANUP SUMMARY"
+log "============================================================"
+log "Playlists processed : $PLAYLISTS_PROCESSED"
+log "Playlists failed    : $PLAYLISTS_FAILED"
+log "Tracks found        : $TOTAL_TRACKS"
+log "Deleted             : $TOTAL_DELETED"
+log "Missing             : $TOTAL_MISSING"
+log "Errors              : $TOTAL_ERRORS"
+log "============================================================"
 
 
 # ============================================================
@@ -224,8 +295,11 @@ while IFS= read -r DUPLICATE_FILE; do
     REAL_FILE=$(realpath -e "$DUPLICATE_FILE" 2>/dev/null)
 
     if [ -z "$REAL_ROOT" ] || [ -z "$REAL_FILE" ]; then
+
         log "  ERROR: Could not resolve path."
+
         DUPLICATE_SKIPPED=$((DUPLICATE_SKIPPED + 1))
+
         continue
     fi
 
@@ -235,10 +309,12 @@ while IFS= read -r DUPLICATE_FILE; do
             ;;
 
         *)
+
             log "  SECURITY: File is outside music directory!"
             log "  SKIPPED"
 
             DUPLICATE_SKIPPED=$((DUPLICATE_SKIPPED + 1))
+
             continue
             ;;
 
@@ -255,11 +331,13 @@ while IFS= read -r DUPLICATE_FILE; do
         if rm -f -- "$REAL_FILE"; then
 
             log "  SUCCESS: Duplicate deleted."
+
             DUPLICATE_DELETED=$((DUPLICATE_DELETED + 1))
 
         else
 
             log "  ERROR: Failed to delete duplicate."
+
             DUPLICATE_SKIPPED=$((DUPLICATE_SKIPPED + 1))
 
         fi
@@ -267,6 +345,7 @@ while IFS= read -r DUPLICATE_FILE; do
     else
 
         log "  DRY RUN: Would delete $REAL_FILE"
+
         DUPLICATE_DELETED=$((DUPLICATE_DELETED + 1))
 
     fi
@@ -294,6 +373,7 @@ log "Duplicate files found : $DUPLICATE_COUNT"
 log "Duplicates deleted     : $DUPLICATE_DELETED"
 log "Duplicates skipped     : $DUPLICATE_SKIPPED"
 
+
 # ============================================================
 # PURGE LOG FILES - OLDER THAN 90 DAYS
 # ============================================================
@@ -314,14 +394,19 @@ if [ -n "$OLD_LOGS" ]; then
     PURGED_COUNT=0
 
     while IFS= read -r OLD_LOG; do
+
         [ -z "$OLD_LOG" ] && continue
 
         log "Purging: $OLD_LOG"
 
         if rm -f -- "$OLD_LOG"; then
+
             PURGED_COUNT=$((PURGED_COUNT + 1))
+
         else
+
             log "ERROR: Could not delete log: $OLD_LOG"
+
         fi
 
     done <<< "$OLD_LOGS"
@@ -334,4 +419,20 @@ else
 
 fi
 
-log "Cleanup job finished."
+
+# ============================================================
+# FINAL SUMMARY
+# ============================================================
+
+log ""
+log "============================================================"
+log "CLEANUP JOB FINISHED"
+log "============================================================"
+log "Playlist tracks      : $TOTAL_TRACKS"
+log "Playlist files deleted: $TOTAL_DELETED"
+log "Playlist files missing: $TOTAL_MISSING"
+log "Playlist errors       : $TOTAL_ERRORS"
+log "Duplicate files found : $DUPLICATE_COUNT"
+log "Duplicates deleted    : $DUPLICATE_DELETED"
+log "Duplicates skipped    : $DUPLICATE_SKIPPED"
+log "============================================================"
